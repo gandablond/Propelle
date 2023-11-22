@@ -39,17 +39,24 @@ namespace Propelle.InterviewChallenge.Endpoints
 
             public override async Task HandleAsync(Request req, CancellationToken ct)
             {
+                
                 var deposit = new Deposit(req.UserId, req.Amount);
-                _paymentsContext.Deposits.Add(deposit);
 
+                _paymentsContext.Deposits.Add(deposit);
+            
                 await _paymentsContext.SaveChangesAsync(ct);
 
-                await _eventBus.Publish(new DepositMade
+                try
                 {
-                    Id = deposit.Id
-                });
+                    await _eventBus.Publish(new DepositMade
+                    {
+                        Id = deposit.Id
+                    });
 
-                await SendAsync(new Response { DepositId = deposit.Id }, 201, ct);
+                    await SendAsync(new Response { DepositId = deposit.Id }, 201, ct);
+                } catch (Exception ex)
+                {
+                }
             }
         }
     }
