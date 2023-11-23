@@ -1,4 +1,5 @@
 ﻿using FastEndpoints;
+using Polly;
 using Propelle.InterviewChallenge.Application;
 using Propelle.InterviewChallenge.Application.Domain;
 using Propelle.InterviewChallenge.Application.Domain.Events;
@@ -23,7 +24,7 @@ namespace Propelle.InterviewChallenge.Endpoints
         {
             private readonly PaymentsContext _paymentsContext;
             private readonly Application.EventBus.IEventBus _eventBus;
-
+            
             public Endpoint(
                 PaymentsContext paymentsContext,
                 Application.EventBus.IEventBus eventBus)
@@ -39,24 +40,25 @@ namespace Propelle.InterviewChallenge.Endpoints
 
             public override async Task HandleAsync(Request req, CancellationToken ct)
             {
-                
+
                 var deposit = new Deposit(req.UserId, req.Amount);
 
                 _paymentsContext.Deposits.Add(deposit);
-            
+
                 await _paymentsContext.SaveChangesAsync(ct);
 
-                try
-                {
-                    await _eventBus.Publish(new DepositMade
+                // The event publishing seems to happen additionally even if the API call fails
+                // When it fails, we need to retry.
+                // 10 retries seem to provide enough resiliency, however in a real life scenario a wait would be introduced as well.
+                var result = Polly.Policy
+                    .Handle<TransientException>()
+                    .RetryAsync(10).ExecuteAsync(async () => await _eventBus.Publish(new DepositMade
                     {
                         Id = deposit.Id
-                    });
+                    }));
 
-                    await SendAsync(new Response { DepositId = deposit.Id }, 201, ct);
-                } catch (Exception ex)
-                {
-                }
+                await SendAsync(new Response { DepositId = deposit.Id }, 201, ct);
+
             }
         }
     }
